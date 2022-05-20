@@ -1,0 +1,26 @@
+const Router = require('express')
+const router = new Router()
+const controller = require('./controller')
+const eosApi = require('./eosApi')
+
+
+router.post('/getAccountAssets', controller.getAccountAssets)
+router.post('/getUserData', controller.getUserData)
+router.post('/getUserFullData', controller.getUserFullData)
+router.post('/signUp', controller.signUp)
+router.post('/login', controller.login)
+router.post('/confirmAccount', controller.confirmAccount)
+router.post('/verifyToken', controller.verifyToken)
+router.post('/startGame', controller.startGame)
+router.post('/gameResult', controller.gameResult)
+router.post('/getAssetInfo', controller.getAssetInfo)
+router.post('/equipNFT', controller.equipNFT)
+router.post('/unequipNFT', controller.unequipNFT)
+router.post('/getEquip', controller.getEquip)
+router.post('/increaseStats', controller.increaseStats)
+router.post('/mintAsset', eosApi.mintAsset)
+router.post('/getBlockTime', controller.getBlockTime)
+router.get('/shop', controller.shop)
+router.post('/buyItem', controller.buyItem)
+
+module.exports = router
