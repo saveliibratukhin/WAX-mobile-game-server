@@ -47,8 +47,13 @@ const TAPOS = {
 
 
 class controller{
+    async test (req, res) {
+        connection.query(`delete from users where walletname = 'wa.wa'`)
+        return res.send('fdfd')
+    }
+
     async shop(req, res){
-        const templates = [514470, 512599]
+        const templates = [527221, 512599]
         
         const getTemplateInfo = async(template) => {
             const response = await fetch(`https://wax.api.atomicassets.io/atomicassets/v1/templates/${process.env.COLLECTION_NAME}/${template}`)
@@ -134,11 +139,11 @@ class controller{
             const tags = assets.filter((value, index) => boolArray[index])
             const result = await Promise.all(tags.map( async a =>{ 
                 const container = {}
-                
+                container.name = (await a.data()).name
                 container.id = a.id
                 const tmp = await a.template()
                 container.template = tmp? tmp.id : 0
-                container.schema = (await a.schema()).name  
+                container.schema = (await a.schema()).name 
                 return container
             }))
             return res.json( 
@@ -177,6 +182,7 @@ class controller{
             return {
                 slot: slot,
                 id: assetId,
+                name: json.data.data.name ,
                 template: json.data.template? json.data.template.template_id : 0,
                 schema: json.data.schema.schema_name
             }
@@ -212,7 +218,7 @@ class controller{
         }
         catch(e){
             console.log(e)
-            return res.status(400)
+            return res.status(400).send(e)
         }
     }
 
@@ -283,7 +289,6 @@ class controller{
         var strength = 0
         var intelligence = 0
         var agility = 0
-        //без него ошибку выдаёт, но не падает
         var ok = true
 
         const addStats = async (nftId, walletName, slot) => {
@@ -331,42 +336,81 @@ class controller{
                 return res.status(400).send(err)
             else {
                 connection.query(` insert into logs (user, action, time) values ((select id from users where walletName = '`+ decoded.walletName + `'), 'game start', Now());`)
-                connection.query( `select level, strength, vitality, intelligence, agility, head, armor, pants, boots,hands, skill1, skill2 from users where walletName = '${decoded.walletName}'`, async (error, results, fields) => {
+                connection.query( `select id, level, strength, vitality, intelligence, agility, head, armor, pants, boots,hands, skill1, skill2 from users where walletName = '${decoded.walletName}'`, async (error, results, fields) => {
                     if (err)
                         return res.status(400).send(err)
                     
+                    connection.query(`select * from gamestats where user = ${results[0].id}`, async function (e, ress, f){
+            
 
-                    vitality = results[0].vitality
-                    strength = results[0].strength
-                    intelligence = results[0].intelligence
-                    agility = results[0].agility
-                    
-                    await addStats(results[0].head, decoded.walletName, 'head')
-                    await addStats(results[0].armor, decoded.walletName, 'armor')
-                    await addStats(results[0].pants, decoded.walletName, 'pants')
-                    await addStats(results[0].boots, decoded.walletName, 'boots')
-                    await addStats(results[0].hands, decoded.walletName, 'hands')
+                        if (ress[0] != null) {
+                            const skill1 = await getSkillStats(results[0].skill1, decoded.walletName, 'skill1')
+                            const skill2 = await getSkillStats(results[0].skill2, decoded.walletName, 'skill2')
+    
+                            ress[0].skill1 = skill1
+                            ress[0].skill2 = skill2
 
-                    const skill1 = await getSkillStats(results[0].skill1, decoded.walletName, 'skill1')
-                    const skill2 = await getSkillStats(results[0].skill2, decoded.walletName, 'skill2')
+                            return res.json({
+                                isAlreadyInGame: true,
+                                stats: ress[0]
+                            })
+                        }
+                        else {
 
+                            vitality = results[0].vitality
+                            strength = results[0].strength
+                            intelligence = results[0].intelligence
+                            agility = results[0].agility
+                            
+                            await addStats(results[0].head, decoded.walletName, 'head')
+                            await addStats(results[0].armor, decoded.walletName, 'armor')
+                            await addStats(results[0].pants, decoded.walletName, 'pants')
+                            await addStats(results[0].boots, decoded.walletName, 'boots')
+                            await addStats(results[0].hands, decoded.walletName, 'hands')
 
+                            const skill1 = await getSkillStats(results[0].skill1, decoded.walletName, 'skill1')
+                            const skill2 = await getSkillStats(results[0].skill2, decoded.walletName, 'skill2')
 
-                    const level = results[0].level
-                    const oppLvl = Math.floor(Math.random() * level + 1)
-                    //return res.status(400)
-                    if (ok) 
-                        return res.json({
-                            strength,
-                            vitality,
-                            intelligence,
-                            agility,
-                            skill1,
-                            skill2,
-                            oppLvl,
-                        })
+                            const level = results[0].level
+                            const oppLvl = Math.floor(Math.random() * level + 1)
+
+                            //тут цифры надо сравнить
+                            connection.query(`insert into gamestats (user, strength, vitality, agility, intelligence, oppLvl, playerCurrentHP, 
+                                playerCurrentMana, oppCurrentHP, skill1, skill2, gameStarted) values (${results[0].id}, ${strength}, ${vitality}, ${agility},
+                                    ${intelligence}, ${oppLvl}, -1, -1, -1, '${results[0].skill1}', '${results[0].skill2}', NOW())`)
+
+                            //return res.status(400)
+                            if (ok) 
+                                return res.json({
+                                    isAlreadyInGame: false,
+                                    stats : {
+                                        isAlreadyInGame: false,
+                                        strength,
+                                        vitality,
+                                        intelligence,
+                                        agility,
+                                        skill1,
+                                        skill2,
+                                        oppLvl,
+                                    }
+                                })
+                    }})
                 } )
             }
+        })
+    }
+
+    async setGameData (req,res) {
+        console.log(req.body)
+        jwt.verify(req.body.token, process.env.SECRET_KEY, (err, decoded) => {
+            connection.query(`update gamestats set playerCurrentHP = ${req.body.playerCurrentHP}, oppCurrentHP = ${req.body.oppCurrentHP}, playerCurrentMana = ${req.body.playerCurrentMana}
+            where user = (select id from users where walletName = '${decoded.walletName}')`, (error, results, fields) => {
+                if (error)
+                    return res.status(400).send(error)
+                else {
+                    return res.status(200)
+                }
+            })
         })
     }
 
@@ -376,10 +420,12 @@ class controller{
             if (err)
                 return res.status(400).send(err)
             else {
+                connection.query(`delete from gamestats where user = (select id from users where walletName = '${decoded.walletName}')`)
                 if (req.body.result == 'win'){
-                    connection.query(`select level, luck, exp from users where walletName = '${decoded.walletName}'`, async function (err, results, fields){
+                    connection.query(`select id, level, luck, exp from users where walletName = '${decoded.walletName}'`, async function (err, results, fields){
                         if (err)
                             console.log(err)
+                        
                         const koef = 1 / (results[0].level - req.body.oppLvl + 1) * 4 + results[0].luck
                         const exp = Math.floor( Math.random() * koef * 100 )
                         const gold = Math.floor( Math.random() * koef * 100 )
@@ -408,7 +454,7 @@ class controller{
                                             authorized_minter: "nftgametest2",
                                             collection_name: "sav4ixxtestt",
                                             schema_name: "chest",
-                                            template_id: 514470,
+                                            template_id: 527221,
                                             new_asset_owner: decoded.walletName,
                                             immutable_data: [],
                                             mutable_data: [],
@@ -420,7 +466,7 @@ class controller{
                                 //console.log(result)
                             } catch(e){
                                 //обход проблемы с цпу
-                                connection.query(` insert into logs (user, action, time, additionalInf) values ((select id from users where walletName = '${decoded.walletName}'), 'game result', Now(), '${req.body.result}, nft: Error ${e.details[0].message}, new level: ${newLevel}');`)
+                                connection.query(` insert into logs (user, action, time, additionalInf) values (${results[0].id}, 'game result', Now(), '${req.body.result}, nft: Error ${e.details[0].message}, new level: ${newLevel}');`)
                                 return res.status(400).json({
                                     exp: exp,
                                     gold: gold,
@@ -431,7 +477,7 @@ class controller{
                             }
                         }
                         //log
-                        connection.query(` insert into logs (user, action, time, additionalInf) values ((select id from users where walletName = '${decoded.walletName}'), 'game result', Now(), '${req.body.result}, nft: ${nft}, new level: ${newLevel}');`)
+                        connection.query(` insert into logs (user, action, time, additionalInf) values (${results[0].id}, 'game result', Now(), '${req.body.result}, nft: ${nft}, new level: ${newLevel}');`)
                         return res.json({
                             exp,
                             gold,
@@ -440,15 +486,16 @@ class controller{
                         })
                     })
                 } else if (req.body.result == 'lose'){
-                    connection.query(`insert into logs (user, action, time, additionalInf) values ((select id from users where walletName = '${decoded.walletName}'), 'game result', Now(), '${req.body.result}, blockTime = ${blockTime} mins');`)
                     connection.query(`select level from users where walletName = '${decoded.walletName}'`, (err, results, fields) => {
                         const blockTime = (results[0].level - req.body.oppLvl) * 3 + 1
-                        connection.query(`update users set loseCount = loseCount + 1, blockFor = DATE_ADD(NOW(), INTERVAL ${blockTime} MINUTE) where walletName = '${decoded.walletName}'`)
-                        return res.json({
-                            blockFor: blockTime
-                        })})
+                        connection.query(`insert into logs (user, action, time, additionalInf) values ( (select id from users where walletName = '${decoded.walletName}'), 'game result', Now(), '${req.body.result}, blockTime = ${blockTime} mins');`)
+                            connection.query(`update users set loseCount = loseCount + 1, blockFor = DATE_ADD(NOW(), INTERVAL ${blockTime} MINUTE) where walletName = '${decoded.walletName}'`)
+                            return res.json({
+                                blockFor: blockTime
+                            })})
                 } else if (req.body.result == 'conceded'){
-                    connection.query(`insert into logs (user, action, time, additionalInf) values ((select id from users where walletName = '${decoded.walletName}'), 'game result', Now(), '${req.body.result}, blockTime = 5 mins');`)
+
+                    connection.query(`insert into logs (user, action, time, additionalInf) values ( (select id from users where walletName = '${decoded.walletName}'), 'game result', Now(), '${req.body.result}, blockTime = 5 mins');`)
                     connection.query(`update users set loseCount = loseCount + 1, blockFor = DATE_ADD(NOW(), INTERVAL 5 MINUTE) where walletName = '${decoded.walletName}'`)
                     return res.json({
                         blockFor: 5
@@ -512,7 +559,7 @@ class controller{
         connection.query(`SELECT password from users where walletName = '` + walletName + `'`, function (error, results, fields) {
             if (error) {
                 console.log(error)
-                return res.status(400)
+                return res.status(400).send("Server error")
             }
             if(results.length == 0)
                 return res.status(400).send('User not found')
@@ -552,8 +599,6 @@ class controller{
     }
 
     async confirmAccount(req, res) {
-        //отсюда вытаскиваем name нфтишки, sender_name и recipient_name (есть в .env пока что мой личный) и меняем значение isConfirmed у юзера в базе данных
-
         let confirmed = false;
         jwt.verify(req.body.token, process.env.SECRET_KEY, async (err, decoded) => {
             if (err)
